@@ -13,7 +13,31 @@ Debian 13 (trixie) 容器镜像，内置 Claude Code、cc-connect 与 SSH 服务
 | SSH | openssh-server，密码/公钥均可在运行时通过环境变量注入 |
 | 其他 | git、git-lfs、gh、python3+venv+pip、curl、wget、jq、tree、unzip、ripgrep、fd、bat、vim、nano、tmux、zsh、htop、mosh、build-essential |
 
-## 构建
+## 直接使用（预构建镜像）
+
+GitHub Actions 已构建 `linux/amd64` 与 `linux/arm64` 双架构镜像并推送到 ghcr.io：
+
+```bash
+docker pull ghcr.io/become-illusory/debian-claude-code:latest
+```
+
+也可以用 `docker run` 直接起：
+
+```bash
+docker run -d --name claude-code \
+  -p 2222:22 -p 9820:9820 -p 9810:9810 \
+  -e SSH_PASSWORD=debian -e DEV_PASSWORD=debian \
+  -e CC_CONNECT_ENABLED=1 \
+  -v "$PWD/data/workspace:/workspace" \
+  -v "$PWD/data/ssh:/etc/ssh/keys" \
+  -v "$PWD/data/root-claude:/root/.claude" \
+  -v "$PWD/data/root-cc-connect:/root/.cc-connect" \
+  ghcr.io/become-illusory/debian-claude-code:latest
+```
+
+镜像标签：`latest`（默认分支）、`main`、`v1.2.3` / `v1.2` / `v1`（推送 `v*` tag 时自动生成）。
+
+## 从源码构建
 
 ```bash
 ./build.sh
