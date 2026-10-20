@@ -1,3 +1,6 @@
+> **已迁出**：这版 Claude Code + cc-connect 的实现保留在此仓库不再更新；
+> Pi Agent + pi-remote-feishu 的新实现在 [Become-ILLUSORY/debian-pi-agent](https://github.com/Become-ILLUSORY/debian-pi-agent)。
+
 # debian-claude-code
 
 Debian 13 (trixie) 容器镜像，内置 Claude Code、cc-connect 与 SSH 服务，apt 源已换成清华镜像。
