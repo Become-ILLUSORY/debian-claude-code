@@ -6,8 +6,9 @@ FROM debian:${DEBIAN_VERSION}
 ARG DEBIAN_MIRROR=https://mirrors.tuna.tsinghua.edu.cn
 ARG NODE_VERSION=22.23.3
 ARG NPM_REGISTRY=https://registry.npmmirror.com
-ARG CLAUDE_CODE_VERSION=latest
-ARG CC_CONNECT_VERSION=1.5.0
+ARG PI_VERSION=latest
+ARG PI_REMOTE_FEISHU_VERSION=latest
+ARG PI_FEISHU_EXTENSION=1
 ARG TARGETARCH
 ARG DEV_UID=1000
 ARG DEV_GID=1000
@@ -16,7 +17,8 @@ ENV DEBIAN_FRONTEND=noninteractive \
     LANG=C.UTF-8 \
     LC_ALL=C.UTF-8 \
     TZ=Asia/Shanghai \
-    NPM_CONFIG_REGISTRY=${NPM_REGISTRY}
+    NPM_CONFIG_REGISTRY=${NPM_REGISTRY} \
+    PI_SKIP_VERSION_CHECK=1
 
 # 换成清华源（trixie 使用 deb822 格式的 debian.sources）
 # 镜像里还没有 CA 证书，先用 http 拉一次装好 ca-certificates，再切回 https
@@ -47,7 +49,7 @@ RUN set -eux; \
     apt-get clean; \
     rm -rf /var/lib/apt/lists/*
 
-# Node.js（Debian 13 自带 20，claude-code 要求 >= 22）
+# Node.js（Debian 13 自带 20，Pi 要求 >= 22.19）
 RUN set -eux; \
     arch="$(dpkg --print-architecture)"; \
     case "$arch" in \
@@ -64,27 +66,27 @@ RUN set -eux; \
     rm -f "/tmp/$tarball" /tmp/SHASUMS256.txt; \
     node -v; npm -v
 
-# Claude Code（npm 原生二进制包）
+# Pi Agent + 飞书桥接 CLI（npm 全局）
 RUN set -eux; \
-    npm install -g --no-audit --no-fund "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}"; \
-    claude --version; \
+    npm install -g --no-audit --no-fund \
+        "@earendil-works/pi-coding-agent@${PI_VERSION}" \
+        "pi-remote-feishu@${PI_REMOTE_FEISHU_VERSION}"; \
+    pi --version; \
+    pi-remote-feishu help >/dev/null; \
     npm cache clean --force
 
-# cc-connect（Go 二进制，GitHub Releases 优先，Gitee 自动回退）
+# 可选：把 pi-remote-feishu 注册为 Pi 扩展（TUI 里的 /feishu 命令与 lark-cli 技能）。
+# 装好后移动到 /opt/pi-seed，首次启动时由 entrypoint 复制进（可能为空的）挂载卷 ~/.pi。
 RUN set -eux; \
-    arch="$(dpkg --print-architecture)"; \
-    tmp=/tmp/cc-connect; mkdir -p "$tmp"; \
-    for url in \
-      "https://github.com/chenhg5/cc-connect/releases/download/v${CC_CONNECT_VERSION}/cc-connect-v${CC_CONNECT_VERSION}-linux-${arch}.tar.gz" \
-      "https://gitee.com/cg33/cc-connect/releases/download/v${CC_CONNECT_VERSION}/cc-connect-v${CC_CONNECT_VERSION}-linux-${arch}.tar.gz"; do \
-        echo "trying $url"; \
-        if curl -fsSL --retry 3 --connect-timeout 20 "$url" -o "$tmp/cc.tar.gz"; then break; fi; \
-    done; \
-    test -s "$tmp/cc.tar.gz"; \
-    tar -xzf "$tmp/cc.tar.gz" -C "$tmp"; \
-    install -m 0755 "$tmp/cc-connect-v${CC_CONNECT_VERSION}-linux-${arch}" /usr/local/bin/cc-connect; \
-    rm -rf "$tmp"; \
-    cc-connect --version
+    if [ "${PI_FEISHU_EXTENSION}" = "1" ]; then \
+        mkdir -p /root/.pi/agent; \
+        pi install "npm:pi-remote-feishu@${PI_REMOTE_FEISHU_VERSION}" >/dev/null 2>&1; \
+        mv /root/.pi /opt/pi-seed; \
+    else \
+        mkdir -p /opt/pi-seed/agent; \
+    fi; \
+    mkdir -p /root/.pi; \
+    du -sh /opt/pi-seed || true
 
 # 用户与目录（uid/gid 与宿主一致，方便挂载）
 RUN set -eux; \
@@ -95,7 +97,7 @@ RUN set -eux; \
     dev_user="$(getent passwd "${DEV_UID}" | cut -d: -f1)"; \
     echo "${dev_user} ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/90-dev; \
     chmod 0440 /etc/sudoers.d/90-dev; \
-    mkdir -p /workspace /run/sshd /etc/ssh/keys /root/.cc-connect /root/.claude; \
+    mkdir -p /workspace /run/sshd /etc/ssh/keys /root/.pi/agent /var/log/pi-remote-feishu; \
     chown -R "${DEV_UID}:${DEV_GID}" /workspace; \
     chmod 700 /root
 
@@ -107,14 +109,15 @@ RUN set -eux; \
     sed -i 's|^HostKey /etc/ssh/ssh_host_|#&|' /etc/ssh/sshd_config; \
     rm -f /etc/ssh/ssh_host_*
 
+COPY feishu-config.py /usr/local/bin/feishu-config.py
 COPY entrypoint.sh /usr/local/bin/docker-entrypoint.sh
-RUN chmod 0755 /usr/local/bin/docker-entrypoint.sh
+RUN chmod 0755 /usr/local/bin/feishu-config.py /usr/local/bin/docker-entrypoint.sh
 
 WORKDIR /workspace
 
-EXPOSE 22 9810 9820
+EXPOSE 22
 
-HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
     CMD bash -c 'exec 3<>/dev/tcp/127.0.0.1/22' || exit 1
 
 ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/docker-entrypoint.sh"]
