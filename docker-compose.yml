@@ -1,0 +1,47 @@
+services:
+  claude:
+    build:
+      context: .
+      args:
+        DEBIAN_VERSION: ${DEBIAN_VERSION:-trixie-slim}
+        DEV_UID: ${DEV_UID:-1000}
+        DEV_GID: ${DEV_GID:-1000}
+        CLAUDE_CODE_VERSION: ${CLAUDE_CODE_VERSION:-latest}
+        CC_CONNECT_VERSION: ${CC_CONNECT_VERSION:-1.5.0}
+    image: ${IMAGE_NAME:-debian-claude-code}:${IMAGE_TAG:-latest}
+    container_name: claude-code
+    hostname: claude-code
+    restart: unless-stopped
+    tty: true
+    stdin_open: true
+    ports:
+      - "${SSH_PORT:-2222}:22"
+      - "${CC_MGMT_PORT:-9820}:9820"
+      - "${CC_BRIDGE_PORT:-9810}:9810"
+    environment:
+      SSH_PASSWORD: ${SSH_PASSWORD:-}
+      DEV_PASSWORD: ${DEV_PASSWORD:-}
+      SSH_AUTHORIZED_KEYS: ${SSH_AUTHORIZED_KEYS:-}
+      CC_CONNECT_ENABLED: ${CC_CONNECT_ENABLED:-1}
+      CC_CONNECT_USER: ${CC_CONNECT_USER:-root}
+      TZ: ${TZ:-Asia/Shanghai}
+      ANTHROPIC_BASE_URL: ${ANTHROPIC_BASE_URL:-}
+      ANTHROPIC_AUTH_TOKEN: ${ANTHROPIC_AUTH_TOKEN:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+    volumes:
+      - ./data/workspace:/workspace
+      - ./data/ssh:/etc/ssh/keys
+      - ./data/root-claude:/root/.claude
+      - ./data/root-cc-connect:/root/.cc-connect
+      - ./data/root-gh:/root/.config/gh
+      - cc-connect-log:/var/log
+    working_dir: /workspace
+    healthcheck:
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/22"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  cc-connect-log:
